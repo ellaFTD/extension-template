@@ -1,62 +1,32 @@
-name: Update releaser worflows
-
+name: Actualizar datos de Samsara
 on:
-  workflow_dispatch:
   schedule:
-    # Monthly on the 23th
-    - cron: '0 2 23 * *'
-
+    - cron: "7 */2 * * *"
+  workflow_dispatch:
+  push:
+    paths:
+      - "Coast_Spend_Report*.xlsx"
+permissions:
+  contents: write
 jobs:
-  releaser_workflows:
-    name: Update releaser workflows
+  update:
     runs-on: ubuntu-latest
-
-    permissions:
-      contents: write
-      pull-requests: write
-
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-      - run: |
-          set -eux
-          wget -O prep-release.yml https://raw.githubusercontent.com/jupyter-server/jupyter_releaser/main/example-workflows/prep-release.yml
-          wget -O publish-release.yml https://raw.githubusercontent.com/jupyter-server/jupyter_releaser/main/example-workflows/publish-release.yml
-        working-directory: template/.github/workflows
-
-      - name: List files changed
-        id: files-changed
-        shell: bash -l {0}
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Procesar reportes de combustible (Coast)
         run: |
-          set -ex
-          export CHANGES=$(git status --porcelain | tee /tmp/modified.log | wc -l)
-          cat /tmp/modified.log
-
-          echo "N_CHANGES=${CHANGES}" >> $GITHUB_OUTPUT
-
-          git diff
-
-      - name: Commit any changes
-        if: steps.files-changed.outputs.N_CHANGES != '0'
-        shell: bash -l {0}
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-
-          git pull --no-tags
-
-          export SHA=$(git rev-parse --short HEAD)
-          export BRANCH_NAME=new-releaser-workflows-${SHA}
-          git checkout -b "${BRANCH_NAME}"
-
-          # Needed for hub to create the pull request correctly
-          # Ref: https://github.com/github/hub/issues/1538 https://github.com/github/hub/pull/1705
-          git remote set-head origin --auto
-
-          git add *
-          git commit -m "Automatic update of the releaser workflows"
-
-          git push --set-upstream origin "${BRANCH_NAME}"
-          gh pr create -B "main" -t "Updated releaser workflows available at ${SHA}" -b "Update releaser workflows from official GitHub repository"
+          if ls Coast_Spend_Report*.xlsx >/dev/null 2>&1; then
+            pip install pandas openpyxl
+            python process_fuel.py
+          fi
+      - run: python fetch_samsara.py
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SAMSARA_TOKEN: ${{ secrets.SAMSARA_TOKEN }}
+      - run: |
+          git config user.name "fleet-bot"
+          git config user.email "fleet-bot@users.noreply.github.com"
+          git add data.json history.json fuel.json
+          git diff --cached --quiet || (git commit -m "Actualizar datos" && git push)
